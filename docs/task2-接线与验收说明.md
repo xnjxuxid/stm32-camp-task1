@@ -93,31 +93,34 @@
 
 ---
 
-## 六、启用 DMP 的三个步骤
+## 六、DMP 库集成（✅ 已完成）
 
-默认 `DMP_ENABLED=0`（工程立即可编译，先验收原始数据）。DMP 需要 InvenSense 官方库：
+DMP 使用 InvenSense 官方 **eMPL**（MotionDriver）库，来源：GitHub `riverzhou/mpu6050`（已用代理拉取），文件清单：
 
-### 步骤 1：获取 eMPL 库文件（6 个）
+| 文件 | 位置 | 说明 |
+|---|---|---|
+| `inv_mpu.c/h` | Src / Inc | eMPL 器件驱动层 |
+| `inv_mpu_dmp_motion_driver.c/h` | Src / Inc | DMP 固件加载与 FIFO 读取 |
+| `dmpKey.h` / `dmpmap.h` | Inc | DMP 固件映像与寄存器映射 |
+| `def.h` | Inc | 目标芯片宏（MPU6050 定义） |
+| `stm32_mpu6050.h` | Inc | **平台适配层（本工程重写）** |
 
-- 来源 A：**正点原子** HAL 库例程《ATK-MPU6050 六轴传感器（DMP）实验》，取其中的：
-  `inv_mpu.c`、`inv_mpu.h`、`inv_mpu_dmp_motion_driver.c`、`inv_mpu_dmp_motion_driver.h`、`dmpKey.h`、`dmpmap.h`
-- 来源 B：GitHub 搜 `eMPL` / `MPU6050 DMP`，或问队友要（RoboMaster 车架码盘代码里也常有）
+**适配要点**（`stm32_mpu6050.h` + `mpu_dmp.c`）：
 
-### 步骤 2：放进工程
+eMPL 要求平台提供 4 个底层接口，映射关系：
 
-- 6 个文件放到 `task2/Src/`（.c）和 `task2/Inc/`（.h）
-- Keil 里 **Application/User 分组 → Add Existing Files** 把 3 个 .c 加进工程
-- Include Paths 已含 `../Inc`，不用改
+```
+i2c_write  ->  eMPL_i2c_write  ->  SoftI2C_WriteRegs   （软件 IIC PB0/PB1）
+i2c_read   ->  eMPL_i2c_read   ->  SoftI2C_ReadRegs
+delay_ms   ->  eMPL_delay_ms   ->  vTaskDelay          （任务上下文，不阻塞系统）
+get_ms     ->  eMPL_get_ms     ->  xTaskGetTickCount
+```
 
-### 步骤 3：适配（正点原子例程需改 3 处小地方）
+`board_config.h` 里 `DMP_ENABLED = 1` 已启用。编译验证：**0 Error / 0 Warning**。
 
-1. `inv_mpu.c` 里 `#include "sys.h"` / `#include "delay.h"` —— 删除或替换
-   （它用的 `delay_ms()` 改成 `vTaskDelay(pdMS_TO_TICKS(x))`）
-2. `inv_mpu.c` 里的 `i2c_write/i2c_read` 已由本工程的 `MPU_Write_Len/MPU_Read_Len`（mpu6050.c）承接
-3. `board_config.h` 里把 `DMP_ENABLED` 改成 `1` → Rebuild
-
-> `mpu_dmp.c` 里已写好：DMP 固件加载、FIFO 配置（200Hz）、四元数→欧拉角换算、
-> 以及 eMPL 需要的 `get_ms()`。接入后 Task_Mpu 自动多出 3 个角度通道。
+> 坑位记录：`mpu_dmp.c` 的 include 顺序必须 `board_config.h` 在 `mpu_dmp.h` 之前——
+> `mpu_dmp.h` 里有 `#ifndef DMP_ENABLED #define 0` 的兜底，顺序反了会用 0 编译出空实现，
+> 链接时报 `Undefined symbol eMPL_xxx`。
 
 ---
 

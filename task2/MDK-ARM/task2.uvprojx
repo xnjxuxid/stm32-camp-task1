@@ -515,6 +515,16 @@
               <FilePath>../Src/vofa_send.c</FilePath>
             </File>
             <File>
+              <FileName>inv_mpu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Src/inv_mpu.c</FilePath>
+            </File>
+            <File>
+              <FileName>inv_mpu_dmp_motion_driver.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Src/inv_mpu_dmp_motion_driver.c</FilePath>
+            </File>
+            <File>
               <FileName>can.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Src/can.c</FilePath>

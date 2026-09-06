@@ -7,8 +7,11 @@
   *  DMP_ENABLED = 1：需要先把 InvenSense eMPL 库文件放进工程（见头文件注释）。
   ******************************************************************************
   */
-#include "mpu_dmp.h"
+/* ⚠️ include 顺序：board_config.h 必须在 mpu_dmp.h 之前 ——
+ * mpu_dmp.h 里有 #ifndef DMP_ENABLED #define 0 的兜底，
+ * 顺序错了会用默认值 0 编译出空实现，导致 eMPL_* 链接错误 */
 #include "board_config.h"
+#include "mpu_dmp.h"
 
 #if DMP_ENABLED
 
@@ -29,12 +32,33 @@
 #include "inv_mpu_dmp_motion_driver.h"
 #include "mpu6050.h"
 #include "board_config.h"
+#include "soft_i2c.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include <math.h>
 
-/* eMPL 需要的毫秒时钟 */
-static int eMPL_get_ms(unsigned long *count)
+/* ============================================================================
+ * eMPL 平台接口实现（stm32_mpu6050.h 把 i2c_write 等宏映射到这里）
+ * ============================================================================*/
+int eMPL_i2c_write(unsigned char slave_addr, unsigned char reg_addr,
+                   unsigned char length, unsigned char const *data)
+{
+    return SoftI2C_WriteRegs(slave_addr, reg_addr, data, length);
+}
+
+int eMPL_i2c_read(unsigned char slave_addr, unsigned char reg_addr,
+                  unsigned char length, unsigned char *data)
+{
+    return SoftI2C_ReadRegs(slave_addr, reg_addr, data, length);
+}
+
+void eMPL_delay_ms(unsigned long num_ms)
+{
+    /* 初始化在任务上下文里调用，用 vTaskDelay 让出 CPU */
+    vTaskDelay(pdMS_TO_TICKS(num_ms));
+}
+
+int eMPL_get_ms(unsigned long *count)
 {
     *count = (unsigned long)(xTaskGetTickCount());
     return 0;

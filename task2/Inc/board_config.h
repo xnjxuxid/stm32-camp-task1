@@ -90,7 +90,7 @@ extern DMA_HandleTypeDef  hdma_usart1_tx;   /* USART1 TX DMA         */
  * 1：启用 DMP 欧拉角（额外 3 通道）——需要先放置 DMP 库文件并加入 Keil 工程
  *    步骤见 docs/task2-接线与验收说明.md 第 6 节 */
 #ifndef DMP_ENABLED
-#define DMP_ENABLED             (0)
+#define DMP_ENABLED             (1)     /* eMPL 库已集成（riverzhou/mpu6050），已启用 */
 #endif
 
 /* ---- MPU 任务 ---- */
