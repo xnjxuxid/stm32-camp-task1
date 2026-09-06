@@ -56,6 +56,9 @@ USART 空闲中断 ──入队(长度3)──> Task_UartEcho ──DMA 发送�
 | 串口不定长接收 → 队列(3) → DMA 回传 `Receive Data ：（%s）\n` | ✅ |
 | F103 对端每 5s 自动切换周期（2s/1s/0.4s） | ✅ |
 
+📹 **功能验收视频**：[`docs/video/task1-acceptance-demo.mp4`](docs/video/task1-acceptance-demo.mp4)
+（演示：F103 对端发帧 → 天空星呼吸灯频率随指令变化 → 串口 `Receive Data ：（%s）` 回传）
+
 ## Git 工作流
 
 - `main`：任务一交付版本（tag: `v1.0-task1`）
