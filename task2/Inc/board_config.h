@@ -94,9 +94,9 @@ extern DMA_HandleTypeDef  hdma_usart1_tx;   /* USART1 TX DMA         */
 #define DMP_ENABLED             (1)     /* eMPL 库已集成（riverzhou/mpu6050），已启用 */
 #endif
 
-/* DMP 调试打印：约每 1 秒打印一次 FIFO 原始四元数（确认后可改回 0） */
+/* DMP 调试打印：1 = 静默 JustFloat、纯文本诊断（排查用）；0 = 正常 9 通道 JustFloat */
 #ifndef DMP_DEBUG
-#define DMP_DEBUG               (1)
+#define DMP_DEBUG               (0)
 #endif
 
 /* ---- MPU 任务 ---- */
