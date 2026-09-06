@@ -99,6 +99,13 @@ extern DMA_HandleTypeDef  hdma_usart1_tx;   /* USART1 TX DMA         */
 #define DMP_DEBUG               (0)
 #endif
 
+/* ch6~8 姿态角输出源：
+ * 0 = 互补滤波（当前芯片 DMP 引擎无效时的真实解算，视频用这个）
+ * 1 = DMP 输出（换到 DMP 正常的模块后置 1） */
+#ifndef DMP_USE_OUTPUT
+#define DMP_USE_OUTPUT          (0)
+#endif
+
 /* ---- MPU 任务 ---- */
 #define MPU_TASK_PERIOD_MS      (5u)        /* 任务书要求：固定 5 ms（vTaskDelayUntil） */
 #define MPU_TASK_STACK          (512u)      /* DMP/浮点运算吃栈，给大一点 */

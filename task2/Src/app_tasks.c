@@ -10,6 +10,7 @@
 #include "mpu_dmp.h"
 #include "vofa_send.h"
 #include "soft_i2c.h"
+#include "attitude.h"
 
 /* ============================================================================
  * 任务二：4 个任务（任务一 3 个 + 新增 MPU 任务）
@@ -147,7 +148,6 @@ static void Task_Mpu(void *argument)
     float     ch[9];
     int16_t   accel[3];
     int16_t   gyro[3];
-    uint16_t  diag    = 0;
     uint16_t  zeroCnt = 0;
     uint8_t   mpuDown = 0;
 
@@ -216,7 +216,7 @@ static void Task_Mpu(void *argument)
 
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(MPU_TASK_PERIOD_MS));
 
-        /* -------- 1) 原始六轴 -------- */
+        /* -------- 1) 原始六轴 + 姿态解算 -------- */
         if (MPU6050_ReadRaw(accel, gyro) == 0)
         {
             if ((accel[0] | accel[1] | accel[2] |
@@ -233,10 +233,13 @@ static void Task_Mpu(void *argument)
             {
                 zeroCnt = 0;
 
-                /* JustFloat 一帧 9 通道：ch0~2 加速度(g)、ch3~5 角速度(°/s)、
-                 * ch6~8 pitch/roll/yaw(°)。⚠️ 必须一帧发全——
-                 * 如果 DMP 3 通道单独用 ch[0..2] 发一帧，会覆盖 VOFA 里的
-                 * 加速度通道，导致"永远看不到角度曲线"（已修复的 bug）。 */
+                /* 互补滤波每周期无条件更新（维持滤波器状态连续） */
+                Attitude_Update(accel, gyro, 0.005f);
+
+                /* JustFloat 恒定 9 通道一帧：ch0~2 加速度(g)、ch3~5 角速度(°/s)、
+                 * ch6~8 姿态角(°)。⚠️ 必须一帧发全——
+                 * 如果角度单独用 ch[0..2] 发一帧，会覆盖 VOFA 里的加速度通道
+                 * （已修复的 bug）。 */
                 ch[0] = (float)accel[0] / MPU_ACCEL_LSB_PER_G;    /* 单位 g    */
                 ch[1] = (float)accel[1] / MPU_ACCEL_LSB_PER_G;
                 ch[2] = (float)accel[2] / MPU_ACCEL_LSB_PER_G;
@@ -244,7 +247,8 @@ static void Task_Mpu(void *argument)
                 ch[4] = (float)gyro[1]  / MPU_GYRO_LSB_PER_DPS;
                 ch[5] = (float)gyro[2]  / MPU_GYRO_LSB_PER_DPS;
 
-#if DMP_ENABLED
+#if DMP_ENABLED && DMP_USE_OUTPUT
+                /* DMP 输出（换到 DMP 正常的模块后把 DMP_USE_OUTPUT 置 1） */
                 {
                     float pitch, roll, yaw;
                     if (MPU_DMP_Read(&pitch, &roll, &yaw) == 0)
@@ -252,32 +256,22 @@ static void Task_Mpu(void *argument)
                         ch[6] = pitch;
                         ch[7] = roll;
                         ch[8] = yaw;
-#if !DMP_DEBUG
-                        VOFA_SendJustFloat(ch, 9);       /* 9 通道一帧 */
-#endif
                     }
                     else
                     {
-#if !DMP_DEBUG
-                        VOFA_SendJustFloat(ch, 6);       /* FIFO 暂空，只发原始 */
-#endif
+                        ch[6] = Attitude_GetPitch();
+                        ch[7] = Attitude_GetRoll();
+                        ch[8] = Attitude_GetYaw();
                     }
                 }
 #else
-#if !DMP_DEBUG
-                VOFA_SendJustFloat(ch, 6);
-#endif
+                /* 当前芯片 DMP 引擎无效：使用互补滤波解算（数据真实） */
+                ch[6] = Attitude_GetPitch();
+                ch[7] = Attitude_GetRoll();
+                ch[8] = Attitude_GetYaw();
 #endif
 
-                /* 诊断：DMP_DEBUG=1 时静默 JustFloat，纯文本输出（0.5s 一次），
-                 * 转动模块看 G= 三个数是否大幅变化 —— 判陀螺仪生死 */
-                if (++diag >= 100u)
-                {
-                    diag = 0;
-                    printf("raw A=%6d %6d %6d  G=%6d %6d %6d\r\n",
-                           accel[0], accel[1], accel[2],
-                           gyro[0],  gyro[1],  gyro[2]);
-                }
+                VOFA_SendJustFloat(ch, 9);       /* 恒定 9 通道一帧 */
             }
         }
     }

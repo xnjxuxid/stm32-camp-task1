@@ -510,6 +510,11 @@
               <FilePath>../Src/mpu_dmp.c</FilePath>
             </File>
             <File>
+              <FileName>attitude.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Src/attitude.c</FilePath>
+            </File>
+            <File>
               <FileName>vofa_send.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Src/vofa_send.c</FilePath>
