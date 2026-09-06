@@ -31,3 +31,7 @@ build*.log
 # 系统文件
 Thumbs.db
 .DS_Store
+# Keil 自动生成的报告/布局文件
+**/*.htm
+**/*.uvoptx
+**/*.build_log.htm
