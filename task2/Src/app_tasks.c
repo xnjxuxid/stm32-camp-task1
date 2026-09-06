@@ -9,6 +9,7 @@
 #include "mpu6050.h"
 #include "mpu_dmp.h"
 #include "vofa_send.h"
+#include "soft_i2c.h"
 
 /* ============================================================================
  * 任务二：4 个任务（任务一 3 个 + 新增 MPU 任务）
@@ -146,13 +147,18 @@ static void Task_Mpu(void *argument)
     float     ch[9];
     int16_t   accel[3];
     int16_t   gyro[3];
+    uint16_t  diag = 0;
 
     /* --- 初始化（失败则慢速重试，不拖垮整个系统） --- */
     for (;;)
     {
         if (MPU6050_Init() == 0)
         {
-            printf("MPU6050 ready (software IIC, 0x68)\r\n");
+            /* 诊断：读回电源寄存器。0x01/0x00 = 已唤醒（SLEEP=0）；
+             * 若读回 0x40 = 还在睡眠（SLEEP=1），数据寄存器将永远是 0 */
+            uint8_t pwr = 0;
+            (void)SoftI2C_ReadReg(MPU6050_ADDR_7BIT, MPU_REG_PWR_MGMT_1, &pwr);
+            printf("MPU6050 ready (soft IIC 0x68), PWR_MGMT_1=0x%02X (SLEEP bit should be clear)\r\n", pwr);
             break;
         }
         printf("MPU6050 init failed - check wiring: VCC/GND, SCL=PB0, SDA=PB1, AD0=GND\r\n");
@@ -187,6 +193,16 @@ static void Task_Mpu(void *argument)
             ch[5] = (float)gyro[2]  / MPU_GYRO_LSB_PER_DPS;
 
             VOFA_SendJustFloat(ch, 6);
+
+            /* 诊断：约每 1 秒用文本打印一次原始值（200 帧 × 5ms）。
+             * 全 0 = 器件仍在睡眠/未采样；有数值 = 数据通路正常 */
+            if (++diag >= 200u)
+            {
+                diag = 0;
+                printf("raw A=%6d %6d %6d  G=%6d %6d %6d\r\n",
+                       accel[0], accel[1], accel[2],
+                       gyro[0],  gyro[1],  gyro[2]);
+            }
         }
 
 #if DMP_ENABLED
