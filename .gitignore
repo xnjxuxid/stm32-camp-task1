@@ -1,12 +1,12 @@
 # ===== Keil MDK 编译产物（绝不提交）=====
-MDK-ARM/*/
-MDK-ARM/*.uvguix.*
-MDK-ARM/*.lst
-MDK-ARM/*.htm
-MDK-ARM/*.dep
-MDK-ARM/*.bak
-MDK-ARM/JLinkLog.txt
-MDK-ARM/debug/
+**/MDK-ARM/*/
+**/MDK-ARM/*.uvguix.*
+**/MDK-ARM/*.lst
+**/MDK-ARM/*.htm
+**/MDK-ARM/*.dep
+**/MDK-ARM/*.bak
+**/MDK-ARM/JLinkLog.txt
+**/MDK-ARM/debug/
 
 # 通用编译产物后缀
 *.o
