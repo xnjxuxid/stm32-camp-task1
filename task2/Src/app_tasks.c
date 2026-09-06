@@ -149,6 +149,7 @@ static void Task_Mpu(void *argument)
     int16_t   accel[3];
     int16_t   gyro[3];
     uint16_t  zeroCnt = 0;
+    uint16_t  satCnt  = 0;
     uint8_t   mpuDown = 0;
 
     /* --- 初始化（失败则慢速重试，不拖垮整个系统） --- */
@@ -167,7 +168,7 @@ static void Task_Mpu(void *argument)
         vTaskDelay(pdMS_TO_TICKS(1000));      /* 1 秒后重试 */
     }
 
-#if DMP_ENABLED
+#if DMP_ENABLED && DMP_USE_OUTPUT
     if (MPU_DMP_Init() == 0)
     {
         printf("DMP firmware loaded, euler angles ON (9 channels)\r\n");
@@ -177,7 +178,11 @@ static void Task_Mpu(void *argument)
         printf("DMP init FAILED - raw data only (6 channels)\r\n");
     }
 #else
-    printf("DMP disabled - raw 6-axis only (6 channels)\r\n");
+    /* DMP 输出未启用：完全不进入 DMP 模式。
+     * ⚠️ 关键教训：DMP 模式下若 FIFO 无人读取，FIFO 溢出后本芯片
+     * （兼容/山寨料）的传感器数据路径会整体锁死（输出满量程饱和值），
+     * 连原始寄存器都不再更新。所以不用 DMP 输出就绝不开 DMP。 */
+    printf("DMP output disabled - complementary filter in use, raw path clean\r\n");
 #endif
 
     lastWake = xTaskGetTickCount();           /* 记录首个唤醒基准点 */
@@ -193,7 +198,7 @@ static void Task_Mpu(void *argument)
             SoftI2C_BusRecover();             /* 9 个时钟 + STOP 解锁总线 */
             if (MPU6050_Init() == 0)
             {
-#if DMP_ENABLED
+#if DMP_ENABLED && DMP_USE_OUTPUT
                 if (MPU_DMP_Init() != 0)
                 {
                     printf("MPU recovered, DMP re-init FAILED (raw only)\r\n");
@@ -205,6 +210,7 @@ static void Task_Mpu(void *argument)
                 }
                 mpuDown  = 0;
                 zeroCnt  = 0;
+                satCnt   = 0;
                 lastWake = xTaskGetTickCount();   /* 重置周期基准，避免追赶爆发 */
             }
             else
@@ -219,6 +225,19 @@ static void Task_Mpu(void *argument)
         /* -------- 1) 原始六轴 + 姿态解算 -------- */
         if (MPU6050_ReadRaw(accel, gyro) == 0)
         {
+            /* 饱和锁死检测：多轴同时钉在满量程值（±32768/±32767）在物理上
+             * 不可能持续存在，是数据路径锁死的特征（全零看门狗的补充） */
+            uint8_t saturated = 0;
+            if (((accel[0] == -32768) || (accel[0] == 32767) ||
+                 (accel[1] == -32768) || (accel[1] == 32767) ||
+                 (accel[2] == -32768) || (accel[2] == 32767)) &&
+                ((gyro[0]  == -32768) || (gyro[0]  == 32767) ||
+                 (gyro[1]  == -32768) || (gyro[1]  == 32767) ||
+                 (gyro[2]  == -32768) || (gyro[2]  == 32767)))
+            {
+                saturated = 1;
+            }
+
             if ((accel[0] | accel[1] | accel[2] |
                  gyro[0]  | gyro[1]  | gyro[2]) == 0)
             {
@@ -227,6 +246,15 @@ static void Task_Mpu(void *argument)
                     zeroCnt = 0;
                     mpuDown = 1;
                     printf("IIC bus locked (all-zero data) - recovering...\r\n");
+                }
+            }
+            else if (saturated)
+            {
+                if (++satCnt >= 40u)
+                {
+                    satCnt = 0;
+                    mpuDown = 1;
+                    printf("sensor data saturated/locked - recovering...\r\n");
                 }
             }
             else

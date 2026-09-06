@@ -26,12 +26,18 @@ void Attitude_Reset(void)
 
 void Attitude_Update(const int16_t accel[3], const int16_t gyro[3], float dt)
 {
-    float ax = (float)accel[0] / ACC_LSB_PER_G;
-    float ay = (float)accel[1] / ACC_LSB_PER_G;
-    float az = (float)accel[2] / ACC_LSB_PER_G;
-    float gx = (float)gyro[0]  / GYR_LSB_PER_DPS;   /* °/s */
-    float gy = (float)gyro[1]  / GYR_LSB_PER_DPS;
-    float gz = (float)gyro[2]  / GYR_LSB_PER_DPS;
+    float ax, ay, az, gx, gy, gz;
+
+    /* 饱和保护：满量程值（±32768）是数据路径锁死的特征，不参与解算 */
+    ax = (accel[0] == -32768) ? 0.0f : (float)accel[0] / ACC_LSB_PER_G;
+    ay = (accel[1] == -32768) ? 0.0f : (float)accel[1] / ACC_LSB_PER_G;
+    az = (accel[2] == -32768) ? 0.0f : (float)accel[2] / ACC_LSB_PER_G;
+    gx = ((gyro[0] == -32768) || (gyro[0] == 32767)) ? 0.0f :
+         (float)gyro[0] / GYR_LSB_PER_DPS;
+    gy = ((gyro[1] == -32768) || (gyro[1] == 32767)) ? 0.0f :
+         (float)gyro[1] / GYR_LSB_PER_DPS;
+    gz = ((gyro[2] == -32768) || (gyro[2] == 32767)) ? 0.0f :
+         (float)gyro[2] / GYR_LSB_PER_DPS;
 
     /* 1) 陀螺积分：快、平滑，但零偏会累积成漂移 */
     s_pitch += gx * dt;
@@ -55,9 +61,13 @@ void Attitude_Update(const int16_t accel[3], const int16_t gyro[3], float dt)
         }
     }
 
-    /* 角度规整到 ±180° */
+    /* 角度规整：yaw ±180°；pitch/roll 限幅防积分发散后长时间拉不回 */
     if (s_yaw   >  180.0f) { s_yaw   -= 360.0f; }
     if (s_yaw   < -180.0f) { s_yaw   += 360.0f; }
+    if (s_pitch >  720.0f) { s_pitch =  720.0f; }
+    if (s_pitch < -720.0f) { s_pitch = -720.0f; }
+    if (s_roll  >  720.0f) { s_roll  =  720.0f; }
+    if (s_roll  < -720.0f) { s_roll  = -720.0f; }
 }
 
 float Attitude_GetPitch(void) { return s_pitch; }
