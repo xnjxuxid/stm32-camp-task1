@@ -252,19 +252,26 @@ static void Task_Mpu(void *argument)
                         ch[6] = pitch;
                         ch[7] = roll;
                         ch[8] = yaw;
+#if !DMP_DEBUG
                         VOFA_SendJustFloat(ch, 9);       /* 9 通道一帧 */
+#endif
                     }
                     else
                     {
+#if !DMP_DEBUG
                         VOFA_SendJustFloat(ch, 6);       /* FIFO 暂空，只发原始 */
+#endif
                     }
                 }
 #else
+#if !DMP_DEBUG
                 VOFA_SendJustFloat(ch, 6);
 #endif
+#endif
 
-                /* 诊断：约每 1 秒用文本打印一次（200 帧 × 5ms） */
-                if (++diag >= 200u)
+                /* 诊断：DMP_DEBUG=1 时静默 JustFloat，纯文本输出（0.5s 一次），
+                 * 转动模块看 G= 三个数是否大幅变化 —— 判陀螺仪生死 */
+                if (++diag >= 100u)
                 {
                     diag = 0;
                     printf("raw A=%6d %6d %6d  G=%6d %6d %6d\r\n",
