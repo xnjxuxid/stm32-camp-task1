@@ -20,6 +20,9 @@ MDK-ARM/debug/
 *.bin
 *.hex
 *.elf
+*.sct
+*.dep
+build*.log
 
 # IDE 用户界面配置（含本机窗口布局，无复现价值）
 *.uvguix.*
