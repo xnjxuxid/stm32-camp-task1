@@ -216,7 +216,7 @@ static void Task_Mpu(void *argument)
 
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(MPU_TASK_PERIOD_MS));
 
-        /* -------- 1) 原始六轴（ JustFloat 6 通道） -------- */
+        /* -------- 1) 原始六轴 -------- */
         if (MPU6050_ReadRaw(accel, gyro) == 0)
         {
             if ((accel[0] | accel[1] | accel[2] |
@@ -233,6 +233,10 @@ static void Task_Mpu(void *argument)
             {
                 zeroCnt = 0;
 
+                /* JustFloat 一帧 9 通道：ch0~2 加速度(g)、ch3~5 角速度(°/s)、
+                 * ch6~8 pitch/roll/yaw(°)。⚠️ 必须一帧发全——
+                 * 如果 DMP 3 通道单独用 ch[0..2] 发一帧，会覆盖 VOFA 里的
+                 * 加速度通道，导致"永远看不到角度曲线"（已修复的 bug）。 */
                 ch[0] = (float)accel[0] / MPU_ACCEL_LSB_PER_G;    /* 单位 g    */
                 ch[1] = (float)accel[1] / MPU_ACCEL_LSB_PER_G;
                 ch[2] = (float)accel[2] / MPU_ACCEL_LSB_PER_G;
@@ -240,9 +244,26 @@ static void Task_Mpu(void *argument)
                 ch[4] = (float)gyro[1]  / MPU_GYRO_LSB_PER_DPS;
                 ch[5] = (float)gyro[2]  / MPU_GYRO_LSB_PER_DPS;
 
+#if DMP_ENABLED
+                {
+                    float pitch, roll, yaw;
+                    if (MPU_DMP_Read(&pitch, &roll, &yaw) == 0)
+                    {
+                        ch[6] = pitch;
+                        ch[7] = roll;
+                        ch[8] = yaw;
+                        VOFA_SendJustFloat(ch, 9);       /* 9 通道一帧 */
+                    }
+                    else
+                    {
+                        VOFA_SendJustFloat(ch, 6);       /* FIFO 暂空，只发原始 */
+                    }
+                }
+#else
                 VOFA_SendJustFloat(ch, 6);
+#endif
 
-                /* 诊断：约每 1 秒用文本打印一次原始值（200 帧 × 5ms） */
+                /* 诊断：约每 1 秒用文本打印一次（200 帧 × 5ms） */
                 if (++diag >= 200u)
                 {
                     diag = 0;
@@ -252,20 +273,6 @@ static void Task_Mpu(void *argument)
                 }
             }
         }
-
-#if DMP_ENABLED
-        /* -------- 2) DMP 欧拉角（JustFloat 3 通道：pitch/roll/yaw） -------- */
-        {
-            float pitch, roll, yaw;
-            if (MPU_DMP_Read(&pitch, &roll, &yaw) == 0)
-            {
-                ch[0] = pitch;
-                ch[1] = roll;
-                ch[2] = yaw;
-                VOFA_SendJustFloat(ch, 3);
-            }
-        }
-#endif
     }
 }
 

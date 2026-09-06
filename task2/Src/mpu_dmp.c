@@ -85,11 +85,20 @@ int MPU_DMP_Read(float *pitch, float *roll, float *yaw)
     short sensors;
     unsigned char more;
     unsigned long timestamp;
+    static int failCnt = 0;
 
     if (dmp_read_fifo(quat, 0, 0, &timestamp, &sensors, &more) != 0)
     {
+        /* 连续失败多半是 FIFO 溢出（读取跟不上）——复位 FIFO 自恢复，
+         * 否则溢出后 dmp_read_fifo 会永远失败 */
+        if (++failCnt >= 20)
+        {
+            failCnt = 0;
+            (void)mpu_reset_fifo();
+        }
         return -1;               /* FIFO 空或溢出（本次没有新数据） */
     }
+    failCnt = 0;
     if ((sensors & INV_WXYZ_QUAT) == 0)
     {
         return -2;               /* 这帧不是四元数 */

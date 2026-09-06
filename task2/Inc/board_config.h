@@ -72,9 +72,10 @@ extern DMA_HandleTypeDef  hdma_usart1_tx;   /* USART1 TX DMA         */
 #define SOFT_I2C_SDA_PIN        GPIO_PIN_1
 #define SOFT_I2C_GPIO_CLK()     __HAL_RCC_GPIOB_CLK_ENABLE()
 
-/* 软件 IIC 半位延时（微秒）。100 kHz 标准模式：半位 5 µs。
- * 可适当减小提速（如 2 µs ≈ 250 kHz），MPU6050 支持到 400 kHz。 */
-#define SOFT_I2C_HALF_BIT_US    (4u)
+/* 软件 IIC 半位延时（微秒）。2 µs ≈ 250 kHz（MPU6050 支持到 400 kHz）。
+ * ⚠️ 任务二单周期内要读 14 字节原始数据 + DMP FIFO（约 34 字节），
+ * 半位 4 µs 时 IIC 总耗时逼近 5 ms 周期上限，提速到 2 µs 留出裕量。 */
+#define SOFT_I2C_HALF_BIT_US    (2u)
 
 /* ---- MPU6050 ---- */
 #define MPU6050_ADDR_7BIT       (0x68u)     /* AD0 接 GND 时的 7 位地址 */
