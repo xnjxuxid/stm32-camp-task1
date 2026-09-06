@@ -147,7 +147,9 @@ static void Task_Mpu(void *argument)
     float     ch[9];
     int16_t   accel[3];
     int16_t   gyro[3];
-    uint16_t  diag = 0;
+    uint16_t  diag    = 0;
+    uint16_t  zeroCnt = 0;
+    uint8_t   mpuDown = 0;
 
     /* --- 初始化（失败则慢速重试，不拖垮整个系统） --- */
     for (;;)
@@ -182,26 +184,72 @@ static void Task_Mpu(void *argument)
 
     for (;;)
     {
+        /* ---- IIC 总线锁死自恢复状态机 ----
+         * 六轴同时全 0 在物理上不可能（静止时 z≈+1g，运动时陀螺也不为 0）。
+         * "读成功"但全 0 = SDA 被从机拉死（读回全 0 且假 ACK），
+         * 常见于运动时杜邦线接触不良。连续 40 帧（200ms）全 0 触发恢复。 */
+        if (mpuDown)
+        {
+            SoftI2C_BusRecover();             /* 9 个时钟 + STOP 解锁总线 */
+            if (MPU6050_Init() == 0)
+            {
+#if DMP_ENABLED
+                if (MPU_DMP_Init() != 0)
+                {
+                    printf("MPU recovered, DMP re-init FAILED (raw only)\r\n");
+                }
+                else
+#endif
+                {
+                    printf("MPU recovered\r\n");
+                }
+                mpuDown  = 0;
+                zeroCnt  = 0;
+                lastWake = xTaskGetTickCount();   /* 重置周期基准，避免追赶爆发 */
+            }
+            else
+            {
+                vTaskDelay(pdMS_TO_TICKS(1000));  /* 1 秒后再试 */
+            }
+            continue;
+        }
+
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(MPU_TASK_PERIOD_MS));
+
         /* -------- 1) 原始六轴（ JustFloat 6 通道） -------- */
         if (MPU6050_ReadRaw(accel, gyro) == 0)
         {
-            ch[0] = (float)accel[0] / MPU_ACCEL_LSB_PER_G;    /* 单位 g    */
-            ch[1] = (float)accel[1] / MPU_ACCEL_LSB_PER_G;
-            ch[2] = (float)accel[2] / MPU_ACCEL_LSB_PER_G;
-            ch[3] = (float)gyro[0]  / MPU_GYRO_LSB_PER_DPS;   /* 单位 °/s  */
-            ch[4] = (float)gyro[1]  / MPU_GYRO_LSB_PER_DPS;
-            ch[5] = (float)gyro[2]  / MPU_GYRO_LSB_PER_DPS;
-
-            VOFA_SendJustFloat(ch, 6);
-
-            /* 诊断：约每 1 秒用文本打印一次原始值（200 帧 × 5ms）。
-             * 全 0 = 器件仍在睡眠/未采样；有数值 = 数据通路正常 */
-            if (++diag >= 200u)
+            if ((accel[0] | accel[1] | accel[2] |
+                 gyro[0]  | gyro[1]  | gyro[2]) == 0)
             {
-                diag = 0;
-                printf("raw A=%6d %6d %6d  G=%6d %6d %6d\r\n",
-                       accel[0], accel[1], accel[2],
-                       gyro[0],  gyro[1],  gyro[2]);
+                if (++zeroCnt >= 40u)
+                {
+                    zeroCnt = 0;
+                    mpuDown = 1;
+                    printf("IIC bus locked (all-zero data) - recovering...\r\n");
+                }
+            }
+            else
+            {
+                zeroCnt = 0;
+
+                ch[0] = (float)accel[0] / MPU_ACCEL_LSB_PER_G;    /* 单位 g    */
+                ch[1] = (float)accel[1] / MPU_ACCEL_LSB_PER_G;
+                ch[2] = (float)accel[2] / MPU_ACCEL_LSB_PER_G;
+                ch[3] = (float)gyro[0]  / MPU_GYRO_LSB_PER_DPS;   /* 单位 °/s  */
+                ch[4] = (float)gyro[1]  / MPU_GYRO_LSB_PER_DPS;
+                ch[5] = (float)gyro[2]  / MPU_GYRO_LSB_PER_DPS;
+
+                VOFA_SendJustFloat(ch, 6);
+
+                /* 诊断：约每 1 秒用文本打印一次原始值（200 帧 × 5ms） */
+                if (++diag >= 200u)
+                {
+                    diag = 0;
+                    printf("raw A=%6d %6d %6d  G=%6d %6d %6d\r\n",
+                           accel[0], accel[1], accel[2],
+                           gyro[0],  gyro[1],  gyro[2]);
+                }
             }
         }
 
@@ -218,9 +266,6 @@ static void Task_Mpu(void *argument)
             }
         }
 #endif
-
-        /* -------- 3) 固定 5 ms 绝对周期（任务书硬性要求） -------- */
-        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(MPU_TASK_PERIOD_MS));
     }
 }
 
