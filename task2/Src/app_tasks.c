@@ -1,0 +1,245 @@
+#include <stdio.h>
+#include <string.h>
+
+#include "app_tasks.h"
+#include "can_bus.h"
+#include "uart_vofa.h"
+#include "breath_led.h"
+#include "board_config.h"
+#include "mpu6050.h"
+#include "mpu_dmp.h"
+#include "vofa_send.h"
+
+/* ============================================================================
+ * 任务二：4 个任务（任务一 3 个 + 新增 MPU 任务）
+ *   Task_CanRx    —— CAN 队列消费者：解帧、校验、发任务通知（继承任务一）
+ *   Task_Breath   —— 等任务通知改呼吸周期；没通知就阻塞（继承任务一）
+ *   Task_UartEcho —— 处理 DMA 收到的数据，按格式回传 VOFA（继承任务一）
+ *   Task_Mpu      —— ★ 新增：vTaskDelayUntil 固定 5 ms 绝对周期
+ *                     1) 软件IIC 读原始六轴 -> JustFloat 6 通道
+ *                     2) 读 DMP 欧拉角   -> JustFloat 3 通道（需启用 DMP）
+ * ==========================================================================*/
+
+static TaskHandle_t s_taskCanHandle    = NULL;
+static TaskHandle_t s_taskBreathHandle = NULL;
+static TaskHandle_t s_taskUartHandle   = NULL;
+static TaskHandle_t s_taskMpuHandle    = NULL;
+
+/* ============================ 任务一：CAN 数据处理 ========================= */
+static void Task_CanRx(void *argument)
+{
+    CanRxPacket_t pkt;
+    uint8_t       sum;
+    uint8_t       cmd;
+    uint16_t      value;
+
+    for (;;)
+    {
+        if (xQueueReceive(CAN_GetQueue(), &pkt, portMAX_DELAY) == pdPASS)
+        {
+            if ((pkt.data[0] != CAN_FRAME_HEAD) || (pkt.data[7] != CAN_FRAME_TAIL))
+            {
+                continue;
+            }
+
+            sum = (uint8_t)(pkt.data[1] + pkt.data[2] + pkt.data[3]);
+            if (sum != pkt.data[4])
+            {
+                continue;
+            }
+
+            cmd   = pkt.data[1];
+            value = (uint16_t)(((uint16_t)pkt.data[2] << 8) | pkt.data[3]);
+
+            switch (cmd)
+            {
+                case CAN_CMD_SET_BREATH_PERIOD:
+                    (void)xTaskNotify(s_taskBreathHandle,
+                                      (uint32_t)value,
+                                      eSetValueWithOverwrite);
+                    break;
+
+                case CAN_CMD_LED_OFF:
+                    BreathLED_Enable(0);
+                    break;
+
+                case CAN_CMD_LED_ON:
+                    BreathLED_Enable(1);
+                    break;
+
+                default:
+                    break;
+            }
+        }
+    }
+}
+
+/* =========================== 任务二：呼吸灯控制 =========================== */
+static void Task_Breath(void *argument)
+{
+    uint32_t notifyValue = 0;
+
+    for (;;)
+    {
+        if (xTaskNotifyWait(0x00000000,
+                            0xFFFFFFFF,
+                            &notifyValue,
+                            portMAX_DELAY) == pdPASS)
+        {
+            BreathLED_SetPeriodMs((uint16_t)notifyValue);
+        }
+        /* 呼吸波形由 TIM7 中断 + TIM3 PWM 硬件产生 ——
+         * 本任务阻塞时呼吸照常，满足任务书"任务二运行中呼吸灯仍按原频率工作"。*/
+    }
+}
+
+/* ======================= 任务三：串口数据处理与回传 ======================= */
+static void Task_UartEcho(void *argument)
+{
+    UartRxPacket_t pkt;
+    char     clean[UART_RX_BUF_SIZE + 1];
+    char     txBuf[UART_TX_BUF_SIZE];
+    uint16_t n;
+    uint16_t i;
+    int      len;
+    uint8_t  c;
+
+    for (;;)
+    {
+        if (xQueueReceive(UART_GetQueue(), &pkt, portMAX_DELAY) == pdPASS)
+        {
+            n = 0;
+            for (i = 0; (i < pkt.len) && (n < UART_RX_BUF_SIZE); i++)
+            {
+                c = pkt.buf[i];
+                if ((c == '\r') || (c == '\n'))
+                {
+                    continue;
+                }
+                clean[n++] = ((c >= 0x20) && (c < 0x7F)) ? (char)c : '.';
+            }
+            clean[n] = '\0';
+
+            len = snprintf(txBuf, sizeof(txBuf), "Receive Data ：（%s）\n", clean);
+            if (len > 0)
+            {
+                UART_SendData_DMA((uint8_t *)txBuf, (uint16_t)len);
+            }
+        }
+    }
+}
+
+/* ====================== 任务四：MPU6050（5ms 绝对周期） ==================== */
+/*
+ * ★ 任务书核心考点：vTaskDelayUntil（绝对周期）
+ *   vTaskDelay(5)      = "这次干完活再等 5ms" → 周期 = 干活时间 + 5ms，会漂移
+ *   vTaskDelayUntil(5) = "距上次唤醒满 5ms 再唤醒" → 周期严格 5ms，不漂移
+ *   VOFA 时间戳能看出差别：后者相邻点间隔恒定，前者随工作量抖动。
+ *
+ * 串口占用说明：本任务与 Task_UartEcho 共用串口发送，
+ * UART_SendData_DMA 内部有互斥量，数据不会撕裂；VOFA 用 JustFloat 协议看曲线，
+ * 需要演示串口回传时在上位机切回文本模式即可。
+ */
+static void Task_Mpu(void *argument)
+{
+    TickType_t lastWake;
+    float     ch[9];
+    int16_t   accel[3];
+    int16_t   gyro[3];
+
+    /* --- 初始化（失败则慢速重试，不拖垮整个系统） --- */
+    for (;;)
+    {
+        if (MPU6050_Init() == 0)
+        {
+            printf("MPU6050 ready (software IIC, 0x68)\r\n");
+            break;
+        }
+        printf("MPU6050 init failed - check wiring: VCC/GND, SCL=PB0, SDA=PB1, AD0=GND\r\n");
+        vTaskDelay(pdMS_TO_TICKS(1000));      /* 1 秒后重试 */
+    }
+
+#if DMP_ENABLED
+    if (MPU_DMP_Init() == 0)
+    {
+        printf("DMP firmware loaded, euler angles ON (9 channels)\r\n");
+    }
+    else
+    {
+        printf("DMP init FAILED - raw data only (6 channels)\r\n");
+    }
+#else
+    printf("DMP disabled - raw 6-axis only (6 channels)\r\n");
+#endif
+
+    lastWake = xTaskGetTickCount();           /* 记录首个唤醒基准点 */
+
+    for (;;)
+    {
+        /* -------- 1) 原始六轴（ JustFloat 6 通道） -------- */
+        if (MPU6050_ReadRaw(accel, gyro) == 0)
+        {
+            ch[0] = (float)accel[0] / MPU_ACCEL_LSB_PER_G;    /* 单位 g    */
+            ch[1] = (float)accel[1] / MPU_ACCEL_LSB_PER_G;
+            ch[2] = (float)accel[2] / MPU_ACCEL_LSB_PER_G;
+            ch[3] = (float)gyro[0]  / MPU_GYRO_LSB_PER_DPS;   /* 单位 °/s  */
+            ch[4] = (float)gyro[1]  / MPU_GYRO_LSB_PER_DPS;
+            ch[5] = (float)gyro[2]  / MPU_GYRO_LSB_PER_DPS;
+
+            VOFA_SendJustFloat(ch, 6);
+        }
+
+#if DMP_ENABLED
+        /* -------- 2) DMP 欧拉角（JustFloat 3 通道：pitch/roll/yaw） -------- */
+        {
+            float pitch, roll, yaw;
+            if (MPU_DMP_Read(&pitch, &roll, &yaw) == 0)
+            {
+                ch[0] = pitch;
+                ch[1] = roll;
+                ch[2] = yaw;
+                VOFA_SendJustFloat(ch, 3);
+            }
+        }
+#endif
+
+        /* -------- 3) 固定 5 ms 绝对周期（任务书硬性要求） -------- */
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(MPU_TASK_PERIOD_MS));
+    }
+}
+
+/* ================================ 任务创建 ================================ */
+void App_Tasks_Create(void)
+{
+    CAN_Bus_Init();         /* CAN 过滤器 + 启动 + 队列(6)（继承任务一） */
+    UART_VOFA_Init();       /* 串口空闲中断 + DMA 接收 + 队列(3)（继承任务一） */
+    BreathLED_Init();       /* PWM + TIM7 节拍（继承任务一） */
+
+    xTaskCreate(Task_CanRx,
+                "CanRx",
+                TASK_CAN_STACK,
+                NULL,
+                TASK_CAN_PRIO,
+                &s_taskCanHandle);
+
+    xTaskCreate(Task_Breath,
+                "Breath",
+                TASK_BREATH_STACK,
+                NULL,
+                TASK_BREATH_PRIO,
+                &s_taskBreathHandle);
+
+    xTaskCreate(Task_UartEcho,
+                "UartEcho",
+                TASK_UART_STACK,
+                NULL,
+                TASK_UART_PRIO,
+                &s_taskUartHandle);
+
+    xTaskCreate(Task_Mpu,
+                "Mpu5ms",
+                MPU_TASK_STACK,
+                NULL,
+                MPU_TASK_PRIO,
+                &s_taskMpuHandle);
+}
