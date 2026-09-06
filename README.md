@@ -1,7 +1,7 @@
 # 华南虎夏令营 · 任务一（CAN + 呼吸灯 + 串口 DMA）
 
 > 主控：立创·梁山派·天空星 **STM32F407VGT6**（HSE 8 MHz → 168 MHz）
-> CAN 对端：**STM32F103C8T6** + SN65HVD230（自制信号源）
+> CAN 对端：**STM32F103C8T6** + TJA1050（5 V 供电，自制信号源）
 > 栈：**HAL + FreeRTOS (CMSIS_V2)**，CubeMX 生成骨架 + 手写外设初始化
 
 ## 仓库结构

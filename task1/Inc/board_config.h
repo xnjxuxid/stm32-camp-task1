@@ -16,7 +16,8 @@
  * ----------------------------------------------------------------------------
  *  呼吸灯 PWM   : TIM3_CH1 -> PB4      （外接 LED + 1kΩ 到 GND；不要用 PA6！）
  *  呼吸节律节拍 : TIM7 更新中断 1 kHz  （呼吸由硬件定时器驱动，不依赖任何任务）
- *  CAN          : CAN1 重映射 -> PB8(RX) / PB9(TX)，外接 SN65HVD230（3.3V）
+ *  CAN          : CAN1 重映射 -> PB8(RX) / PB9(TX)，外接 TJA1050（5V 供电）
+ *                 TXD: MCU 3.3V 直驱；RXD: 模块输出≈5V，PB8 为 FT 引脚可直连（可串 1k）
  *                 波特率 500 kbps（APB1 42 MHz：PSC=6, BS1=9TQ, BS2=4TQ）
  *  VOFA 串口    : USART1 重映射 -> PB6(TX) / PB7(RX)，115200
  *                 RX = DMA2_Stream2(Circular)，TX = DMA2_Stream7(Normal)

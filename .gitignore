@@ -28,3 +28,6 @@ MDK-ARM/debug/
 # 系统文件
 Thumbs.db
 .DS_Store
+
+# 杂散工程目录（test/ 根下误生成的 CubeMX 工程，待确认后另行整理）
+/test/
