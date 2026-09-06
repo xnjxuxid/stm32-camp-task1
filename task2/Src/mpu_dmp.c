@@ -79,7 +79,7 @@ int MPU_DMP_Init(void)
     printf("DMP: 2/6 sensors + fifo\r\n");
     if (mpu_set_sensors(INV_XYZ_GYRO | INV_XYZ_ACCEL) != 0)        { return -2; }
     if (mpu_configure_fifo(INV_XYZ_GYRO | INV_XYZ_ACCEL) != 0)     { return -3; }
-    if (mpu_set_sample_rate(200) != 0)                             { return -4; }
+    if (mpu_set_sample_rate(100) != 0)                             { return -4; }
 
     /* ---- step 3：加载 DMP 固件（~3KB 走软件 IIC，需 1~2 秒） ---- */
     printf("DMP: 3/6 load firmware\r\n");
@@ -87,7 +87,7 @@ int MPU_DMP_Init(void)
 
     /* ---- step 4：FIFO 输出率 + 特性 ---- */
     printf("DMP: 4/6 fifo rate + features\r\n");
-    if (dmp_set_fifo_rate(200) != 0)                               { return -6; }
+    if (dmp_set_fifo_rate(100) != 0)                               { return -6; }
     if (dmp_enable_feature(DMP_FEATURE_6X_LP_QUAT |
                            DMP_FEATURE_GYRO_CAL) != 0)             { return -7; }
 
