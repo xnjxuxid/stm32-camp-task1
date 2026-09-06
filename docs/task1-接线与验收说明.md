@@ -24,7 +24,7 @@
 | `Src/freertos.c` | `MX_FREERTOS_Init()` 里调用 `App_Tasks_Create()` |
 | `Src/main.c` | 外设初始化 + CAN 接收回调 + TIM7 呼吸回调 |
 
-**数据流**（答辩时画这张图）：
+**整体数据流**：
 
 ```
 CAN 中断 ──入队(6)──> Task_CanRx ──任务通知(新周期值)──> Task_Breath ──> 改呼吸周期
@@ -98,7 +98,7 @@ PB4 ──[1 kΩ]── LED 阳极(长脚) ──▶│── LED 阴极(短脚)
 
 ---
 
-## 四、CubeMX 配置参数表（核对 / 答辩用）
+## 四、CubeMX 配置参数表（核对用）
 
 ### 时钟
 | 项 | 值 |
