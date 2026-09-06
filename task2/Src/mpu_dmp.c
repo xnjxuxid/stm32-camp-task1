@@ -108,6 +108,15 @@ int MPU_DMP_Init(void)
         printf("DMP: self test FAILED - continue without bias\r\n");
     }
 
+    /* ---- step 5.5：清除自检残留（陀螺 -7000 恒定偏移的元凶） ---- */
+    if (MPU6050_ClearSelfTest() != 0) { return -9; }
+    {
+        uint8_t stx = 0xFF, gc = 0xFF;
+        (void)SoftI2C_ReadReg(MPU6050_ADDR_7BIT, 0x0D, &stx);
+        (void)SoftI2C_ReadReg(MPU6050_ADDR_7BIT, MPU_REG_GYRO_CONFIG, &gc);
+        printf("DMP: self-test regs cleared (ST_X=0x%02X GYRO_CFG=0x%02X)\r\n", stx, gc);
+    }
+
     /* ---- step 6：进入 DMP 模式 ---- */
     printf("DMP: 6/6 enable DMP\r\n");
     if (mpu_set_dmp_state(1) != 0) { return -8; }

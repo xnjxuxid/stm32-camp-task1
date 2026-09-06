@@ -37,6 +37,9 @@ int  MPU6050_Init(void);
 int  MPU6050_ReadWhoAmI(uint8_t *id);
 /* 一次连续读 14 字节：加速度 x/y/z + 温度 + 陀螺仪 x/y/z（地址自动递增） */
 int  MPU6050_ReadRaw(int16_t accel[3], int16_t gyro[3]);
+/* 清除自检残留：SELF_TEST_X/Y/Z=0，GYRO_CONFIG/ACCEL_CONFIG 重写（清 ST 位）
+ * 自检后陀螺输出恒定 -7xxx 偏移就是自检模式没退出造成的 */
+int  MPU6050_ClearSelfTest(void);
 
 /* ---- eMPL（InvenSense DMP 库）需要的两个底层接口，实现在本文件 ---- */
 int  MPU_Write_Len(uint8_t addr, uint8_t reg, uint8_t len, uint8_t *buf);

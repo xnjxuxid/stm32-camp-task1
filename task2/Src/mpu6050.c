@@ -119,3 +119,19 @@ int MPU6050_ReadRaw(int16_t accel[3], int16_t gyro[3])
 
     return 0;
 }
+
+/**
+  * @brief  清除自检残留
+  *  自检后 SELF_TEST_X/Y/Z(0x0D-0x0F) 残留非零自检码，使陀螺输出恒定的
+  *  自检响应偏移（实测三轴 ≈ -7000 LSB 且纹丝不动），DMP 姿态积分因此冻结。
+  *  本仓库精简版 eMPL 的 mpu_run_self_test restore 路径未清理这些寄存器。
+  */
+int MPU6050_ClearSelfTest(void)
+{
+    if (MPU_WriteReg(MPU_REG_SELF_TEST_X,       0x00u) != 0) { return -1; }  /* 0x0D X */
+    if (MPU_WriteReg(MPU_REG_SELF_TEST_X + 1u,  0x00u) != 0) { return -2; }  /* 0x0E Y */
+    if (MPU_WriteReg(MPU_REG_SELF_TEST_X + 2u,  0x00u) != 0) { return -3; }  /* 0x0F Z */
+    if (MPU_WriteReg(MPU_REG_GYRO_CONFIG,  0x00u) != 0) { return -4; }       /* 清 XG/YG/ZG_ST，量程 ±250 */
+    if (MPU_WriteReg(MPU_REG_ACCEL_CONFIG, 0x00u) != 0) { return -5; }       /* 清 ACCEL_ST，量程 ±2g */
+    return 0;
+}
