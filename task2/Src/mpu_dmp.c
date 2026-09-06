@@ -36,6 +36,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include <math.h>
+#include <stdio.h>
 
 /* ============================================================================
  * eMPL 平台接口实现（stm32_mpu6050.h 把 i2c_write 等宏映射到这里）
@@ -87,16 +88,35 @@ int MPU_DMP_Read(float *pitch, float *roll, float *yaw)
     unsigned long timestamp;
     static int failCnt = 0;
 
-    if (dmp_read_fifo(quat, 0, 0, &timestamp, &sensors, &more) != 0)
     {
-        /* 连续失败多半是 FIFO 溢出（读取跟不上）——复位 FIFO 自恢复，
-         * 否则溢出后 dmp_read_fifo 会永远失败 */
-        if (++failCnt >= 20)
+        int r = dmp_read_fifo(quat, 0, 0, &timestamp, &sensors, &more);
+
+#if DMP_DEBUG
+        /* 诊断：约每 1 秒打印一次 FIFO 原始内容。
+         * 四元数恒为 0 1073741824 0 0 (= q 0,1,0,0) 表示 DMP 引擎没在更新姿态 */
         {
-            failCnt = 0;
-            (void)mpu_reset_fifo();
+            static int dbgCnt = 0;
+            if (++dbgCnt >= 200)
+            {
+                dbgCnt = 0;
+                printf("fifo r=%d sensors=0x%04X more=%u q=%d %d %d %d\r\n",
+                       r, sensors, more,
+                       quat[0], quat[1], quat[2], quat[3]);
+            }
         }
-        return -1;               /* FIFO 空或溢出（本次没有新数据） */
+#endif
+
+        if (r != 0)
+        {
+            /* 连续失败多半是 FIFO 溢出（读取跟不上）——复位 FIFO 自恢复，
+             * 否则溢出后 dmp_read_fifo 会永远失败 */
+            if (++failCnt >= 20)
+            {
+                failCnt = 0;
+                (void)mpu_reset_fifo();
+            }
+            return -1;           /* FIFO 空或溢出（本次没有新数据） */
+        }
     }
     failCnt = 0;
     if ((sensors & INV_WXYZ_QUAT) == 0)

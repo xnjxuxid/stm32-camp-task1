@@ -94,6 +94,11 @@ extern DMA_HandleTypeDef  hdma_usart1_tx;   /* USART1 TX DMA         */
 #define DMP_ENABLED             (1)     /* eMPL 库已集成（riverzhou/mpu6050），已启用 */
 #endif
 
+/* DMP 调试打印：约每 1 秒打印一次 FIFO 原始四元数（确认后可改回 0） */
+#ifndef DMP_DEBUG
+#define DMP_DEBUG               (1)
+#endif
+
 /* ---- MPU 任务 ---- */
 #define MPU_TASK_PERIOD_MS      (5u)        /* 任务书要求：固定 5 ms（vTaskDelayUntil） */
 #define MPU_TASK_STACK          (512u)      /* DMP/浮点运算吃栈，给大一点 */
