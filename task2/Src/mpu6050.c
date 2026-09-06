@@ -63,13 +63,28 @@ int MPU6050_Init(void)
         return -1;                                      /* 器件不在位 / 接线错误 */
     }
 
-    /* 2) 复位器件（寄存器恢复默认值） */
-    if (MPU_WriteReg(MPU_REG_PWR_MGMT_1, 0x80u) != 0) { return -2; }
-    for (i = 0; i < 100000u; i++) { __NOP(); }            /* 复位需要时间 */
-    MPU_WriteReg(MPU_REG_PWR_MGMT_1, 0x80u);              /* 冗余，保险 */
+    /* 2) 唤醒：退出睡眠 + 时钟源 = PLL（陀螺仪 Y 轴）
+     *    ⚠️ 不使用 DEVICE_RESET(0x80)：
+     *    复位需要 ~100ms 才完成，短延时后写寄存器会被复位过程覆盖/丢弃，
+     *    现象就是"读数全 0"（器件保持默认 SLEEP 状态）。
+     *    上电默认即 0x40(SLEEP)，直接写 0x01 唤醒即可，无需复位。 */
+    if (MPU_WriteReg(MPU_REG_PWR_MGMT_1, 0x01u) != 0) { return -2; }
 
-    /* 3) 唤醒 + 时钟源 = PLL（陀螺仪 Y 轴） */
-    if (MPU_WriteReg(MPU_REG_PWR_MGMT_1, 0x01u) != 0) { return -3; }
+    /* 3) 唤醒后等时钟源切换稳定（PLL 锁定），≈10ms */
+    for (i = 0; i < 600000u; i++) { __NOP(); }
+
+    /* 4) 读回验证：确认 SLEEP 位(bit6) 已清零 —— 把"唤醒失败"显式暴露出来 */
+    {
+        uint8_t pwr = 0;
+        if (SoftI2C_ReadReg(MPU6050_ADDR_7BIT, MPU_REG_PWR_MGMT_1, &pwr) != 0)
+        {
+            return -3;
+        }
+        if (pwr & 0x40u)                   /* SLEEP 仍为 1 = 唤醒失败 */
+        {
+            return -8;
+        }
+    }
 
     /* 4) 采样分频 */
     if (MPU_WriteReg(MPU_REG_SMPLRT_DIV, 0x00u) != 0) { return -4; }
