@@ -67,16 +67,52 @@ int eMPL_get_ms(unsigned long *count)
 
 int MPU_DMP_Init(void)
 {
-    if (mpu_init() != 0)                 return -1;   /* 器件层初始化（复用已配置的软件IIC） */
-    if (mpu_set_sensors(INV_XYZ_GYRO | INV_XYZ_ACCEL) != 0) return -2;
-    if (mpu_configure_fifo(INV_XYZ_GYRO | INV_XYZ_ACCEL) != 0) return -3;
-    if (mpu_set_sample_rate(200) != 0)   return -4;   /* 200Hz 采样，够 5ms 读 */
-    if (dmp_load_motion_driver_firmware() != 0) return -5;  /* 加载 DMP 固件 */
-    if (dmp_enable_feature(DMP_FEATURE_6X_LP_QUAT |
-                           DMP_FEATURE_GYRO_CAL) != 0)  return -6;
-    if (dmp_set_fifo_rate(200) != 0)     return -7;   /* FIFO 输出 200Hz */
-    if (mpu_set_dmp_state(1) != 0)       return -8;   /* 进入 DMP 模式 */
+    long gyroBias[3]  = {0, 0, 0};
+    long accelBias[3] = {0, 0, 0};
+    int  st;
 
+    /* ---- step 1：器件层初始化（复用已配置的软件 IIC） ---- */
+    printf("DMP: 1/6 mpu_init\r\n");
+    if (mpu_init() != 0) { return -1; }
+
+    /* ---- step 2：使能传感器 + FIFO ---- */
+    printf("DMP: 2/6 sensors + fifo\r\n");
+    if (mpu_set_sensors(INV_XYZ_GYRO | INV_XYZ_ACCEL) != 0)        { return -2; }
+    if (mpu_configure_fifo(INV_XYZ_GYRO | INV_XYZ_ACCEL) != 0)     { return -3; }
+    if (mpu_set_sample_rate(200) != 0)                             { return -4; }
+
+    /* ---- step 3：加载 DMP 固件（~3KB 走软件 IIC，需 1~2 秒） ---- */
+    printf("DMP: 3/6 load firmware\r\n");
+    if (dmp_load_motion_driver_firmware() != 0)                    { return -5; }
+
+    /* ---- step 4：FIFO 输出率 + 特性 ---- */
+    printf("DMP: 4/6 fifo rate + features\r\n");
+    if (dmp_set_fifo_rate(200) != 0)                               { return -6; }
+    if (dmp_enable_feature(DMP_FEATURE_6X_LP_QUAT |
+                           DMP_FEATURE_GYRO_CAL) != 0)             { return -7; }
+
+    /* ---- step 5：自检 + 设置偏置（eMPL 标准流程，缺了它四元数输出零噪声！）----
+     * ⚠️ 自检期间必须保持模块完全静止约 5 秒 */
+    printf("DMP: 5/6 self test - KEEP MPU STILL ~5s\r\n");
+    st = mpu_run_self_test(gyroBias, accelBias);
+    printf("DMP: self test result = 0x%02X (1=gyro, 2=accel, 3=both)\r\n", st);
+
+    if ((st & 0x03) == 0x03)      /* 陀螺 + 加速度都通过 */
+    {
+        mpu_set_gyro_bias_reg(gyroBias);
+        mpu_set_accel_bias_6050_reg(accelBias);
+        printf("DMP: bias applied\r\n");
+    }
+    else
+    {
+        printf("DMP: self test FAILED - continue without bias\r\n");
+    }
+
+    /* ---- step 6：进入 DMP 模式 ---- */
+    printf("DMP: 6/6 enable DMP\r\n");
+    if (mpu_set_dmp_state(1) != 0) { return -8; }
+
+    printf("DMP: init OK\r\n");
     return 0;
 }
 
